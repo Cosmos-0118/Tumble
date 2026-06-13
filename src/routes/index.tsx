@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { lazy, Suspense } from "react";
 
-const Factory = lazy(() => import("@/components/Factory"));
+const Factory = lazy(() => import("@/features/sandbox/sandbox-view"));
 
 export const Route = createFileRoute("/")({
   head: () => ({
