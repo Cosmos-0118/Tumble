@@ -39,10 +39,20 @@
 }
 
 @layer base {
-  * { border-color: var(--color-border); }
-  html, body, #root { height: 100%; }
+  * {
+    border-color: var(--color-border);
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
   body {
-    background: radial-gradient(ellipse at top, oklch(0.22 0.04 270) 0%, var(--color-background) 60%);
+    background: radial-gradient(
+      ellipse at top,
+      oklch(0.22 0.04 270) 0%,
+      var(--color-background) 60%
+    );
     color: var(--color-foreground);
     font-family: var(--font-display);
     overflow: hidden;

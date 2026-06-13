@@ -25,7 +25,13 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   return (
-    <Suspense fallback={<div className="flex h-screen items-center justify-center text-sm text-muted-foreground">Loading factory…</div>}>
+    <Suspense
+      fallback={
+        <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">
+          Loading factory…
+        </div>
+      }
+    >
       <Factory />
     </Suspense>
   );

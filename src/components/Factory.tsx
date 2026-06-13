@@ -1,5 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState, useCallback } from "react";
 import Matter from "matter-js";
+
+// pentatonic scale for satisfying tones
+const PENTATONIC = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25, 783.99, 880.0];
 
 type Tool =
   | "ball"
@@ -13,14 +17,7 @@ type Tool =
   | "rotate"
   | "erase";
 
-const BALL_COLORS = [
-  "#ff6fae",
-  "#5ee4ff",
-  "#ffd166",
-  "#a6f56a",
-  "#c39bff",
-  "#ff9a5e",
-];
+const BALL_COLORS = ["#ff6fae", "#5ee4ff", "#ffd166", "#a6f56a", "#c39bff", "#ff9a5e"];
 
 const TOOLS: { id: Tool; label: string; hint: string }[] = [
   { id: "ball", label: "Ball", hint: "Click to drop a ball" },
@@ -34,7 +31,6 @@ const TOOLS: { id: Tool; label: string; hint: string }[] = [
   { id: "rotate", label: "Rotate", hint: "Drag around a shape to rotate" },
   { id: "erase", label: "Erase", hint: "Click to remove" },
 ];
-
 
 const MAX_BALLS = 250;
 
@@ -52,8 +48,17 @@ export default function Factory() {
   const lastNoteRef = useRef(0);
   const dupSizeRef = useRef(140);
   const selectedRef = useRef<Matter.Body[] | null>(null);
-  const selectAnchorRef = useRef<{ x: number; y: number; bodies: { body: Matter.Body; ox: number; oy: number }[] } | null>(null);
-  const rotateAnchorRef = useRef<{ cx: number; cy: number; startAngle: number; bodies: { body: Matter.Body; startBodyAngle: number; ox: number; oy: number }[] } | null>(null);
+  const selectAnchorRef = useRef<{
+    x: number;
+    y: number;
+    bodies: { body: Matter.Body; ox: number; oy: number }[];
+  } | null>(null);
+  const rotateAnchorRef = useRef<{
+    cx: number;
+    cy: number;
+    startAngle: number;
+    bodies: { body: Matter.Body; startBodyAngle: number; ox: number; oy: number }[];
+  } | null>(null);
   const groupCounterRef = useRef(1);
 
   const [tool, setTool] = useState<Tool>("ball");
@@ -93,9 +98,6 @@ export default function Factory() {
     osc.start(t);
     osc.stop(t + 0.45);
   }, []);
-
-  // pentatonic scale for satisfying tones
-  const PENTATONIC = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25, 783.99, 880.0];
 
   useEffect(() => {
     if (!wrapperRef.current || !canvasRef.current) return;
@@ -214,7 +216,6 @@ export default function Factory() {
       Matter.Composite.add(engine.world, ball);
     };
 
-
     // per-tick logic: spinners + cull
     Matter.Events.on(engine, "beforeUpdate", () => {
       const bodies = Matter.Composite.allBodies(engine.world);
@@ -224,7 +225,10 @@ export default function Factory() {
           Matter.Body.setAngle(b, b.angle + 0.09);
         }
         // duplicator arcs are static — no rotation
-        if (b.label === "ball" && (b.position.y > height + 300 || b.position.x < -300 || b.position.x > width + 300)) {
+        if (
+          b.label === "ball" &&
+          (b.position.y > height + 300 || b.position.x < -300 || b.position.x > width + 300)
+        ) {
           Matter.Composite.remove(engine.world, b);
         }
       }
@@ -259,10 +263,19 @@ export default function Factory() {
         const baseIdx = Math.floor(((ball as any).pitch ?? 440) / 80) % PENTATONIC.length;
         let idx = baseIdx;
         let waveform: OscillatorType = "sine";
-        if (other.label === "bumper") { idx = (baseIdx + 4) % PENTATONIC.length; waveform = "triangle"; }
-        else if (other.label === "spinner") { idx = (baseIdx + 7) % PENTATONIC.length; waveform = "triangle"; }
-        else if (other.label === "ramp") { idx = baseIdx; waveform = "sine"; }
-        else if (other.label === "ball") { idx = (baseIdx + 2) % PENTATONIC.length; waveform = "sine"; }
+        if (other.label === "bumper") {
+          idx = (baseIdx + 4) % PENTATONIC.length;
+          waveform = "triangle";
+        } else if (other.label === "spinner") {
+          idx = (baseIdx + 7) % PENTATONIC.length;
+          waveform = "triangle";
+        } else if (other.label === "ramp") {
+          idx = baseIdx;
+          waveform = "sine";
+        } else if (other.label === "ball") {
+          idx = (baseIdx + 2) % PENTATONIC.length;
+          waveform = "sine";
+        }
         const freq = PENTATONIC[idx];
         const vol = Math.min(0.1, 0.015 + speed * 0.008);
         playTone(freq, vol, waveform);
@@ -382,8 +395,6 @@ export default function Factory() {
       }
       Matter.Composite.add(engine.world, bodies);
     };
-
-
 
     const placeRamp = (x1: number, y1: number, x2: number, y2: number) => {
       const dx = x2 - x1;
@@ -541,8 +552,8 @@ export default function Factory() {
         ctx.restore();
       }
       if (t === "duplicator") {
-        const cx = s ? s.x : (c ? c.x : -9999);
-        const cy = s ? s.y : (c ? c.y : -9999);
+        const cx = s ? s.x : c ? c.x : -9999;
+        const cy = s ? s.y : c ? c.y : -9999;
         const dragR = s && c ? Math.hypot(c.x - s.x, c.y - s.y) : 0;
         const r = dragR > 25 ? dragR : dupSizeRef.current;
         if (cx > -9000) {
@@ -569,7 +580,10 @@ export default function Factory() {
         ctx.strokeStyle = t === "rotate" ? "rgba(255,209,102,0.95)" : "rgba(94,228,255,0.95)";
         ctx.lineWidth = 2;
         ctx.setLineDash([4, 4]);
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        let minX = Infinity,
+          minY = Infinity,
+          maxX = -Infinity,
+          maxY = -Infinity;
         for (const b of sel) {
           minX = Math.min(minX, b.bounds.min.x);
           minY = Math.min(minY, b.bounds.min.y);
@@ -588,8 +602,6 @@ export default function Factory() {
         ctx.restore();
       }
     });
-
-
 
     canvas.addEventListener("pointerdown", onDown);
     canvas.addEventListener("pointermove", onMove);
@@ -677,16 +689,10 @@ export default function Factory() {
 
       {/* HUD top */}
       <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 p-3 sm:p-5">
-        <div className="pointer-events-auto rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.35)] max-w-[70vw]">
-          <p className="text-[9px] sm:text-[10px] uppercase tracking-[0.4em] text-muted-foreground">
-            Tumble · Sketch 008
-          </p>
-          <h1 className="mt-1 text-xl sm:text-2xl md:text-3xl font-semibold tracking-tight">
-            Oddly Satisfying Factory
+        <div className="pointer-events-auto flex items-center justify-center rounded-3xl border border-white/20 bg-white/10 px-6 py-3 backdrop-blur-3xl shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+          <h1 className="bg-gradient-to-br from-white via-white/80 to-white/30 bg-clip-text text-2xl sm:text-4xl font-extrabold tracking-tighter text-transparent drop-shadow-sm">
+            Tumble
           </h1>
-          <p className="mt-1 hidden sm:block max-w-sm text-xs sm:text-sm text-muted-foreground">
-            Drop balls. Build ramps. Let the chaos compose itself.
-          </p>
         </div>
         <div className="pointer-events-auto flex flex-col sm:flex-row gap-2 text-xs font-medium">
           <Stat label="Balls" value={ballCount} accent="var(--cyan)" />
@@ -698,7 +704,9 @@ export default function Factory() {
       {showHelp && (
         <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-white/10 bg-white/5 px-6 py-4 text-center backdrop-blur-2xl">
           <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">Tap anywhere</p>
-          <p className="mt-1 text-sm sm:text-base text-foreground/80">Drop balls · drag ramps · place a duplicator</p>
+          <p className="mt-1 text-sm sm:text-base text-foreground/80">
+            Drop balls · drag ramps · place a duplicator
+          </p>
         </div>
       )}
 
@@ -711,7 +719,9 @@ export default function Factory() {
       <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-2 p-3 sm:p-5">
         {tool === "duplicator" && (
           <div className="pointer-events-auto flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)]">
-            <span className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">Size</span>
+            <span className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
+              Size
+            </span>
             <input
               type="range"
               min={50}
@@ -720,8 +730,12 @@ export default function Factory() {
               onChange={(e) => setDupSize(Number(e.target.value))}
               className="w-40 accent-[color:var(--lime)]"
             />
-            <span className="text-xs tabular-nums text-foreground/80 w-8 text-right">{dupSize}</span>
-            <span className="hidden sm:inline text-[10px] text-muted-foreground">· tip: drag on canvas to size</span>
+            <span className="text-xs tabular-nums text-foreground/80 w-8 text-right">
+              {dupSize}
+            </span>
+            <span className="hidden sm:inline text-[10px] text-muted-foreground">
+              · tip: drag on canvas to size
+            </span>
           </div>
         )}
         <div className="pointer-events-auto w-full max-w-[calc(100vw-1.5rem)] sm:max-w-fit overflow-x-auto">
@@ -777,15 +791,19 @@ export default function Factory() {
 
 function Stat({ label, value, accent }: { label: string; value: number; accent: string }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 backdrop-blur-2xl min-w-[68px]">
-      <div className="flex items-center gap-2">
+    <div className="flex flex-col items-center justify-center rounded-3xl border border-white/20 bg-white/10 px-4 py-2 backdrop-blur-3xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] min-w-[72px]">
+      <div className="flex items-center gap-1.5 mb-0.5">
         <span
           className="inline-block h-1.5 w-1.5 rounded-full"
           style={{ background: accent, boxShadow: `0 0 10px ${accent}` }}
         />
-        <span className="text-[9px] uppercase tracking-[0.25em] text-muted-foreground">{label}</span>
+        <span className="text-[10px] uppercase tracking-[0.2em] text-white/70 font-medium">
+          {label}
+        </span>
       </div>
-      <div className="mt-0.5 text-base sm:text-lg font-semibold tabular-nums">{value}</div>
+      <div className="text-xl sm:text-2xl font-extrabold tabular-nums tracking-tighter text-white drop-shadow-sm">
+        {value}
+      </div>
     </div>
   );
 }
@@ -803,24 +821,70 @@ function ToolGlyph({ id }: { id: Tool }) {
   };
   switch (id) {
     case "ball":
-      return <svg {...common}><circle cx="12" cy="12" r="6" /></svg>;
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="6" />
+        </svg>
+      );
     case "bouncy":
-      return <svg {...common}><circle cx="12" cy="12" r="5" /><path d="M12 3v2M12 19v2M3 12h2M19 12h2" /></svg>;
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="5" />
+          <path d="M12 3v2M12 19v2M3 12h2M19 12h2" />
+        </svg>
+      );
     case "ramp":
-      return <svg {...common}><path d="M4 18 L20 8" /></svg>;
+      return (
+        <svg {...common}>
+          <path d="M4 18 L20 8" />
+        </svg>
+      );
     case "bumper":
-      return <svg {...common}><circle cx="12" cy="12" r="4" /><circle cx="12" cy="12" r="9" /></svg>;
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="4" />
+          <circle cx="12" cy="12" r="9" />
+        </svg>
+      );
     case "funnel":
-      return <svg {...common}><path d="M4 6 L12 14 L20 6" /></svg>;
+      return (
+        <svg {...common}>
+          <path d="M4 6 L12 14 L20 6" />
+        </svg>
+      );
     case "spinner":
-      return <svg {...common}><path d="M4 12 L20 12" /><circle cx="12" cy="12" r="2" /></svg>;
+      return (
+        <svg {...common}>
+          <path d="M4 12 L20 12" />
+          <circle cx="12" cy="12" r="2" />
+        </svg>
+      );
     case "duplicator":
-      return <svg {...common}><circle cx="12" cy="12" r="8" /><path d="M9 12h6M12 9v6" /></svg>;
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="8" />
+          <path d="M9 12h6M12 9v6" />
+        </svg>
+      );
     case "select":
-      return <svg {...common}><path d="M5 3 L5 17 L9 13 L12 20 L14 19 L11 12 L17 12 Z" /></svg>;
+      return (
+        <svg {...common}>
+          <path d="M5 3 L5 17 L9 13 L12 20 L14 19 L11 12 L17 12 Z" />
+        </svg>
+      );
     case "rotate":
-      return <svg {...common}><path d="M4 12a8 8 0 1 0 3-6.2" /><path d="M3 3v5h5" /></svg>;
+      return (
+        <svg {...common}>
+          <path d="M4 12a8 8 0 1 0 3-6.2" />
+          <path d="M3 3v5h5" />
+        </svg>
+      );
     case "erase":
-      return <svg {...common}><path d="M6 18 L18 6" /><path d="M6 6 L18 18" /></svg>;
+      return (
+        <svg {...common}>
+          <path d="M6 18 L18 6" />
+          <path d="M6 6 L18 18" />
+        </svg>
+      );
   }
 }
