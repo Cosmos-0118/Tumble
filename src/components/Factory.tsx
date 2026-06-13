@@ -679,7 +679,7 @@ export default function Factory() {
       <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 p-3 sm:p-5">
         <div className="pointer-events-auto rounded-2xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.35)] max-w-[70vw]">
           <p className="text-[9px] sm:text-[10px] uppercase tracking-[0.4em] text-muted-foreground">
-            Lovable Labs · Sketch 008
+            Tumble · Sketch 008
           </p>
           <h1 className="mt-1 text-xl sm:text-2xl md:text-3xl font-semibold tracking-tight">
             Oddly Satisfying Factory
