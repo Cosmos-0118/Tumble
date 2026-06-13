@@ -1,0 +1,50 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-panel-foreground: var(--panel-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-pink: var(--pink);
+  --color-cyan: var(--cyan);
+  --color-amber: var(--amber);
+  --color-lime: var(--lime);
+  --font-display: var(--font-display);
+}
+
+:root {
+  --background: oklch(0.16 0.02 260);
+  --foreground: oklch(0.97 0.01 250);
+  --panel: oklch(0.21 0.025 260);
+  --panel-foreground: oklch(0.97 0.01 250);
+  --accent: oklch(0.78 0.18 200);
+  --accent-foreground: oklch(0.16 0.02 260);
+  --muted: oklch(0.28 0.02 260);
+  --muted-foreground: oklch(0.7 0.02 260);
+  --border: oklch(0.32 0.02 260);
+  --pink: oklch(0.78 0.2 350);
+  --cyan: oklch(0.82 0.16 200);
+  --amber: oklch(0.85 0.16 80);
+  --lime: oklch(0.88 0.18 130);
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html, body, #root { height: 100%; }
+  body {
+    background: radial-gradient(ellipse at top, oklch(0.22 0.04 270) 0%, var(--color-background) 60%);
+    color: var(--color-foreground);
+    font-family: var(--font-display);
+    overflow: hidden;
+  }
+}
