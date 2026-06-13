@@ -7,7 +7,6 @@ const PENTATONIC = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25
 
 type Tool =
   | "ball"
-  | "bouncy"
   | "ramp"
   | "bumper"
   | "funnel"
@@ -17,11 +16,12 @@ type Tool =
   | "rotate"
   | "erase";
 
+type BallType = "normal" | "bouncy" | "perfect";
+
 const BALL_COLORS = ["#ff6fae", "#5ee4ff", "#ffd166", "#a6f56a", "#c39bff", "#ff9a5e"];
 
 const TOOLS: { id: Tool; label: string; hint: string }[] = [
   { id: "ball", label: "Ball", hint: "Click to drop a ball" },
-  { id: "bouncy", label: "Bouncy", hint: "Super bouncy ball" },
   { id: "ramp", label: "Ramp", hint: "Click & drag a line" },
   { id: "bumper", label: "Bumper", hint: "Springy peg" },
   { id: "funnel", label: "Funnel", hint: "Click to place" },
@@ -62,6 +62,7 @@ export default function Factory() {
   const groupCounterRef = useRef(1);
 
   const [tool, setTool] = useState<Tool>("ball");
+  const [ballType, setBallType] = useState<BallType>("normal");
   const [ballCount, setBallCount] = useState(0);
   const [partsCount, setPartsCount] = useState(0);
   const [showHelp, setShowHelp] = useState(true);
@@ -73,6 +74,10 @@ export default function Factory() {
   useEffect(() => {
     dupSizeRef.current = dupSize;
   }, [dupSize]);
+  const ballTypeRef = useRef<BallType>("normal");
+  useEffect(() => {
+    ballTypeRef.current = ballType;
+  }, [ballType]);
 
   const playTone = useCallback((freq: number, vol = 0.06, type: OscillatorType = "sine") => {
     let ctx = audioCtxRef.current;
@@ -141,6 +146,7 @@ export default function Factory() {
       };
       const t = 80;
       return [
+        Matter.Bodies.rectangle(w / 2, -t / 2, w, t, wallOpts),
         Matter.Bodies.rectangle(w / 2, h + t / 2 - 1, w, t, wallOpts),
         Matter.Bodies.rectangle(-t / 2, h / 2, t, h * 2, wallOpts),
         Matter.Bodies.rectangle(w + t / 2, h / 2, t, h * 2, wallOpts),
@@ -188,6 +194,7 @@ export default function Factory() {
       if (bodies.filter((b) => b.label === "ball").length >= MAX_BALLS) return;
       const r = (source as any).circleRadius || 10;
       const color = (source.render as any).fillStyle || "#5ee4ff";
+      const sType = (source as any).ballType || "normal";
       const now = performance.now();
       // Spawn the clone OFFSET upward + sideways so it doesn't immediately re-trigger
       // the duplicate arc (it sits at the bottom of the ring). Then set lastDup so
@@ -195,23 +202,32 @@ export default function Factory() {
       const ox = (Math.random() - 0.5) * 4;
       const oy = -r * 2.4;
       const ball = Matter.Bodies.circle(source.position.x + ox, source.position.y + oy, r, {
-        restitution: (source as any).bouncy ? 1.05 : 0.78,
-        friction: 0.003,
-        frictionAir: (source as any).bouncy ? 0.001 : 0.005,
-        density: (source as any).bouncy ? 0.001 : 0.0018,
+        restitution: sType === "bouncy" ? 1.05 : sType === "perfect" ? 1.02 : 0.78,
+        friction: sType === "perfect" ? 0 : 0.003,
+        frictionStatic: sType === "perfect" ? 0 : 0.5,
+        frictionAir: sType === "perfect" ? 0 : sType === "bouncy" ? 0.001 : 0.005,
+        density: sType === "bouncy" || sType === "perfect" ? 0.001 : 0.0018,
+        inertia: sType === "perfect" ? Infinity : undefined,
         label: "ball",
         render: {
           fillStyle: color,
-          strokeStyle: "rgba(255,255,255,0.45)",
-          lineWidth: 2,
+          strokeStyle:
+            sType === "perfect" ? "#a6f56a" : sType === "bouncy" ? "#fff" : "rgba(255,255,255,0.4)",
+          lineWidth: sType === "normal" ? 2 : 3,
         },
       });
       (ball as any).pitch = (source as any).pitch ?? 440;
-      (ball as any).bouncy = (source as any).bouncy ?? false;
+      (ball as any).ballType = sType;
       (ball as any).lastDup = now;
+      const boostY = sType === "perfect" ? 16 : sType === "bouncy" ? 12 : 7;
+      const boostX = sType === "perfect" ? 6 : 2;
       Matter.Body.setVelocity(ball, {
-        x: source.velocity.x * 0.5 + (Math.random() - 0.5) * 1.5,
-        y: -Math.abs(source.velocity.y) * 0.5 - 2,
+        x: source.velocity.x * 0.5 + (Math.random() - 0.5) * boostX,
+        y: -Math.abs(source.velocity.y) * 0.5 - boostY,
+      });
+      Matter.Body.setVelocity(source, {
+        x: source.velocity.x + (Math.random() - 0.5) * boostX,
+        y: Math.min(source.velocity.y - boostY * 0.8, -boostY * 0.5),
       });
       Matter.Composite.add(engine.world, ball);
     };
@@ -284,7 +300,10 @@ export default function Factory() {
           const dx = ball.position.x - other.position.x;
           const dy = ball.position.y - other.position.y;
           const m = Math.hypot(dx, dy) || 1;
-          const force = (ball as any).bouncy ? 0.06 : 0.045;
+          const force =
+            (ball as any).ballType === "bouncy" || (ball as any).ballType === "perfect"
+              ? 0.06
+              : 0.045;
           Matter.Body.applyForce(ball, ball.position, {
             x: (dx / m) * force,
             y: (dy / m) * force,
@@ -300,27 +319,35 @@ export default function Factory() {
       return { x: ev.clientX - r.left, y: ev.clientY - r.top };
     };
 
-    const dropBall = (x: number, y: number, bouncy: boolean) => {
+    const dropBall = (x: number, y: number, type: BallType) => {
       const bodies = Matter.Composite.allBodies(engine.world);
       if (bodies.filter((b) => b.label === "ball").length >= MAX_BALLS) return;
-      const color = bouncy ? "#ff6fae" : BALL_COLORS[ballCountRef.current % BALL_COLORS.length];
       ballCountRef.current += 1;
-      const radius = bouncy ? 12 : 10 + Math.random() * 8;
+      const color =
+        type === "bouncy"
+          ? "#ff6fae"
+          : type === "perfect"
+            ? "#ffffff"
+            : BALL_COLORS[ballCountRef.current % BALL_COLORS.length];
+      const radius = type === "normal" ? 10 + Math.random() * 8 : 12;
       const pitch = 220 + Math.random() * 440;
       const ball = Matter.Bodies.circle(x, y, radius, {
-        restitution: bouncy ? 1.05 : 0.78,
-        friction: 0.003,
-        frictionAir: bouncy ? 0.001 : 0.005,
-        density: bouncy ? 0.001 : 0.0018,
+        restitution: type === "bouncy" ? 1.05 : type === "perfect" ? 1.02 : 0.78,
+        friction: type === "perfect" ? 0 : 0.003,
+        frictionStatic: type === "perfect" ? 0 : 0.5,
+        frictionAir: type === "perfect" ? 0 : type === "bouncy" ? 0.001 : 0.005,
+        density: type === "bouncy" || type === "perfect" ? 0.001 : 0.0018,
+        inertia: type === "perfect" ? Infinity : undefined,
         label: "ball",
         render: {
           fillStyle: color,
-          strokeStyle: bouncy ? "#fff" : "rgba(255,255,255,0.4)",
-          lineWidth: bouncy ? 3 : 2,
+          strokeStyle:
+            type === "perfect" ? "#a6f56a" : type === "bouncy" ? "#fff" : "rgba(255,255,255,0.4)",
+          lineWidth: type === "normal" ? 2 : 3,
         },
       });
       (ball as any).pitch = pitch;
-      (ball as any).bouncy = bouncy;
+      (ball as any).ballType = type;
       Matter.Composite.add(engine.world, ball);
     };
 
@@ -447,8 +474,7 @@ export default function Factory() {
       if (t === "ramp" || t === "duplicator") {
         dragStartRef.current = { x, y };
         dragCurRef.current = { x, y };
-      } else if (t === "ball") dropBall(x, y, false);
-      else if (t === "bouncy") dropBall(x, y, true);
+      } else if (t === "ball") dropBall(x, y, ballTypeRef.current);
       else if (t === "bumper") placeBumper(x, y);
       else if (t === "funnel") placeFunnel(x, y);
       else if (t === "spinner") placeSpinner(x, y);
@@ -637,27 +663,41 @@ export default function Factory() {
     };
   }, [playTone]);
 
-  const rainBalls = (bouncy = false) => {
+  const rainBalls = () => {
     const engine = engineRef.current;
     if (!engine || !wrapperRef.current) return;
     const w = wrapperRef.current.clientWidth;
+    const type = ballTypeRef.current;
     for (let i = 0; i < 25; i++) {
       setTimeout(() => {
         const bodies = Matter.Composite.allBodies(engine.world);
         if (bodies.filter((b) => b.label === "ball").length >= MAX_BALLS) return;
         const x = Math.random() * w;
-        const color = bouncy ? "#ff6fae" : BALL_COLORS[ballCountRef.current % BALL_COLORS.length];
         ballCountRef.current += 1;
-        const ball = Matter.Bodies.circle(x, -20, bouncy ? 12 : 10 + Math.random() * 8, {
-          restitution: bouncy ? 1.05 : 0.78,
-          friction: 0.003,
-          frictionAir: bouncy ? 0.001 : 0.005,
-          density: bouncy ? 0.001 : 0.0018,
+        const color =
+          type === "bouncy"
+            ? "#ff6fae"
+            : type === "perfect"
+              ? "#ffffff"
+              : BALL_COLORS[ballCountRef.current % BALL_COLORS.length];
+        const radius = type === "normal" ? 10 + Math.random() * 8 : 12;
+        const ball = Matter.Bodies.circle(x, 20, radius, {
+          restitution: type === "bouncy" ? 1.05 : type === "perfect" ? 1.02 : 0.78,
+          friction: type === "perfect" ? 0 : 0.003,
+          frictionStatic: type === "perfect" ? 0 : 0.5,
+          frictionAir: type === "perfect" ? 0 : type === "bouncy" ? 0.001 : 0.005,
+          density: type === "bouncy" || type === "perfect" ? 0.001 : 0.0018,
+          inertia: type === "perfect" ? Infinity : undefined,
           label: "ball",
-          render: { fillStyle: color, strokeStyle: "rgba(255,255,255,0.4)", lineWidth: 2 },
+          render: {
+            fillStyle: color,
+            strokeStyle:
+              type === "perfect" ? "#a6f56a" : type === "bouncy" ? "#fff" : "rgba(255,255,255,0.4)",
+            lineWidth: type === "normal" ? 2 : 3,
+          },
         });
         (ball as any).pitch = 220 + Math.random() * 440;
-        (ball as any).bouncy = bouncy;
+        (ball as any).ballType = type;
         Matter.Composite.add(engine.world, ball);
       }, i * 50);
     }
@@ -717,6 +757,27 @@ export default function Factory() {
 
       {/* Toolbar */}
       <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col items-center gap-2 p-3 sm:p-5">
+        {tool === "ball" && (
+          <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-white/10 bg-white/5 p-1 backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)]">
+            {[
+              { id: "normal", label: "Normal" },
+              { id: "bouncy", label: "Bouncy" },
+              { id: "perfect", label: "Perfect" },
+            ].map((bt) => (
+              <button
+                key={bt.id}
+                onClick={() => setBallType(bt.id as BallType)}
+                className={`rounded-xl px-3 py-1.5 text-[10px] sm:text-xs font-medium transition-all ${
+                  ballType === bt.id
+                    ? "bg-foreground text-background shadow-md"
+                    : "text-muted-foreground hover:bg-white/10 hover:text-foreground"
+                }`}
+              >
+                {bt.label}
+              </button>
+            ))}
+          </div>
+        )}
         {tool === "duplicator" && (
           <div className="pointer-events-auto flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.4)]">
             <span className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
@@ -759,17 +820,12 @@ export default function Factory() {
             ))}
             <div className="mx-1 h-6 w-px bg-white/10" />
             <button
-              onClick={() => rainBalls(false)}
+              onClick={() => rainBalls()}
               className="shrink-0 rounded-xl px-2.5 sm:px-3 py-2 text-xs font-medium text-foreground hover:bg-white/10"
             >
               Rain
             </button>
-            <button
-              onClick={() => rainBalls(true)}
-              className="shrink-0 rounded-xl px-2.5 sm:px-3 py-2 text-xs font-medium text-pink hover:bg-white/10"
-            >
-              Bouncy rain
-            </button>
+            <div className="mx-1 h-6 w-px bg-white/10" />
             <button
               onClick={clearBalls}
               className="shrink-0 rounded-xl px-2.5 sm:px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-white/10 hover:text-foreground"
@@ -824,13 +880,6 @@ function ToolGlyph({ id }: { id: Tool }) {
       return (
         <svg {...common}>
           <circle cx="12" cy="12" r="6" />
-        </svg>
-      );
-    case "bouncy":
-      return (
-        <svg {...common}>
-          <circle cx="12" cy="12" r="5" />
-          <path d="M12 3v2M12 19v2M3 12h2M19 12h2" />
         </svg>
       );
     case "ramp":
