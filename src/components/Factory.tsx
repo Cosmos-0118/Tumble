@@ -2,8 +2,34 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Matter from "matter-js";
 
-// pentatonic scale for satisfying tones
-const PENTATONIC = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25, 783.99, 880.0];
+// pentatonic scale for satisfying tones spanning 5 octaves
+const PENTATONIC = [
+  130.81,
+  146.83,
+  164.81,
+  196.0,
+  220.0, // C3
+  261.63,
+  293.66,
+  329.63,
+  392.0,
+  440.0, // C4
+  523.25,
+  587.33,
+  659.25,
+  783.99,
+  880.0, // C5
+  1046.5,
+  1174.66,
+  1318.51,
+  1567.98,
+  1760.0, // C6
+  2093.0,
+  2349.32,
+  2637.02,
+  3135.96,
+  3520.0, // C7
+];
 
 type Tool =
   | "ball"
@@ -88,20 +114,23 @@ export default function Factory() {
     if (ctx.state === "suspended") ctx.resume();
     // gentle throttle to avoid audio overload
     const now = performance.now();
-    if (now - lastNoteRef.current < 8) return;
+    if (now - lastNoteRef.current < 5) return; // Prevent outright audio crash
     lastNoteRef.current = now;
 
     const t = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = type;
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(vol, t + 0.005);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+    osc.frequency.setValueAtTime(freq, t);
+
+    // Simple, clean plink envelope
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(vol * 0.5, t + 0.005); // Reduced volume
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.3); // Shorter decay
+
     osc.connect(gain).connect(ctx.destination);
     osc.start(t);
-    osc.stop(t + 0.45);
+    osc.stop(t + 0.35);
   }, []);
 
   useEffect(() => {
@@ -114,9 +143,9 @@ export default function Factory() {
 
     const engine = Matter.Engine.create({
       gravity: { x: 0, y: 1, scale: 0.0012 },
-      positionIterations: 10,
-      velocityIterations: 10,
-      constraintIterations: 4,
+      positionIterations: 20,
+      velocityIterations: 20,
+      constraintIterations: 8,
     });
     engineRef.current = engine;
 
@@ -144,12 +173,12 @@ export default function Factory() {
         render: { fillStyle: "rgba(255,255,255,0.04)" },
         label: "wall",
       };
-      const t = 80;
+      const t = 400; // Thick walls prevent tunneling at extreme speeds
       return [
-        Matter.Bodies.rectangle(w / 2, -t / 2, w, t, wallOpts),
-        Matter.Bodies.rectangle(w / 2, h + t / 2 - 1, w, t, wallOpts),
-        Matter.Bodies.rectangle(-t / 2, h / 2, t, h * 2, wallOpts),
-        Matter.Bodies.rectangle(w + t / 2, h / 2, t, h * 2, wallOpts),
+        Matter.Bodies.rectangle(w / 2, -t / 2, w + t * 2, t, wallOpts),
+        Matter.Bodies.rectangle(w / 2, h + t / 2 - 1, w + t * 2, t, wallOpts),
+        Matter.Bodies.rectangle(-t / 2, h / 2, t, h * 2 + t * 2, wallOpts),
+        Matter.Bodies.rectangle(w + t / 2, h / 2, t, h * 2 + t * 2, wallOpts),
       ];
     };
 
@@ -216,7 +245,8 @@ export default function Factory() {
           lineWidth: sType === "normal" ? 2 : 3,
         },
       });
-      (ball as any).pitch = (source as any).pitch ?? 440;
+      (ball as any).pitchIdx =
+        (source as any).pitchIdx ?? Math.floor(Math.random() * PENTATONIC.length);
       (ball as any).ballType = sType;
       (ball as any).lastDup = now;
       const boostY = sType === "perfect" ? 16 : sType === "bouncy" ? 12 : 7;
@@ -240,12 +270,24 @@ export default function Factory() {
           Matter.Body.setAngularVelocity(b, 0.09);
           Matter.Body.setAngle(b, b.angle + 0.09);
         }
-        // duplicator arcs are static — no rotation
-        if (
-          b.label === "ball" &&
-          (b.position.y > height + 300 || b.position.x < -300 || b.position.x > width + 300)
-        ) {
-          Matter.Composite.remove(engine.world, b);
+        if (b.label === "ball") {
+          // Prevent tunneling at extreme speed
+          const maxSpeed = 35;
+          if (b.speed > maxSpeed) {
+            Matter.Body.setVelocity(b, {
+              x: (b.velocity.x / b.speed) * maxSpeed,
+              y: (b.velocity.y / b.speed) * maxSpeed,
+            });
+          }
+          // Cull balls that somehow escaped
+          if (
+            b.position.y > height + 500 ||
+            b.position.y < -500 ||
+            b.position.x < -500 ||
+            b.position.x > width + 500
+          ) {
+            Matter.Composite.remove(engine.world, b);
+          }
         }
       }
     });
@@ -276,7 +318,7 @@ export default function Factory() {
         if (speed < 1.2) continue;
 
         // pentatonic note based on ball + obstacle
-        const baseIdx = Math.floor(((ball as any).pitch ?? 440) / 80) % PENTATONIC.length;
+        const baseIdx = (ball as any).pitchIdx ?? Math.floor(Math.random() * PENTATONIC.length);
         let idx = baseIdx;
         let waveform: OscillatorType = "sine";
         if (other.label === "bumper") {
@@ -294,7 +336,12 @@ export default function Factory() {
         }
         const freq = PENTATONIC[idx];
         const vol = Math.min(0.1, 0.015 + speed * 0.008);
-        playTone(freq, vol, waveform);
+        const now = performance.now();
+        const lastSound = (ball as any).lastSound ?? 0;
+        if (now - lastSound > 60) {
+          (ball as any).lastSound = now;
+          playTone(freq, vol, waveform);
+        }
 
         if (other.label === "bumper") {
           const dx = ball.position.x - other.position.x;
@@ -330,7 +377,7 @@ export default function Factory() {
             ? "#ffffff"
             : BALL_COLORS[ballCountRef.current % BALL_COLORS.length];
       const radius = type === "normal" ? 10 + Math.random() * 8 : 12;
-      const pitch = 220 + Math.random() * 440;
+      const pitchIdx = Math.floor(Math.random() * PENTATONIC.length);
       const ball = Matter.Bodies.circle(x, y, radius, {
         restitution: type === "bouncy" ? 1.05 : type === "perfect" ? 1.02 : 0.78,
         friction: type === "perfect" ? 0 : 0.003,
@@ -346,7 +393,7 @@ export default function Factory() {
           lineWidth: type === "normal" ? 2 : 3,
         },
       });
-      (ball as any).pitch = pitch;
+      (ball as any).pitchIdx = pitchIdx;
       (ball as any).ballType = type;
       Matter.Composite.add(engine.world, ball);
     };
@@ -696,7 +743,7 @@ export default function Factory() {
             lineWidth: type === "normal" ? 2 : 3,
           },
         });
-        (ball as any).pitch = 220 + Math.random() * 440;
+        (ball as any).pitchIdx = Math.floor(Math.random() * PENTATONIC.length);
         (ball as any).ballType = type;
         Matter.Composite.add(engine.world, ball);
       }, i * 50);
